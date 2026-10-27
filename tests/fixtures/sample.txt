@@ -1,0 +1,3 @@
+Semantic Kernel coordinates model calls and reusable tools.
+
+Document retrieval helps an assistant find relevant passages before answering a question.
