@@ -1,0 +1,5 @@
+Azure AI Search supports hybrid retrieval by combining keyword search with vector similarity. Text embeddings represent the semantic meaning of document passages.
+
+A document question-answering assistant can split PDF and text files into chunks, preserve source filenames and page numbers, generate embeddings, and store the chunks in a search index.
+
+Semantic Kernel can orchestrate model calls and reusable plugins. Retrieved passages should retain their source metadata so an assistant can cite the documents that support an answer.
