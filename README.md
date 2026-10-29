@@ -269,4 +269,8 @@ The F1 App Service plan has limited compute capacity and no SLA. Azure AI and Az
 
 ## License
 
-No license file has been added yet. Until a license is selected and included, do not assume that the repository grants open-source reuse rights.
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+Third-party dependencies and external services remain subject to their respective licenses and terms.
