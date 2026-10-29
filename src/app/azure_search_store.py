@@ -160,11 +160,16 @@ class AzureSearchStore(SearchStore):
             index_name=index_name,
             embedder=embedder,
         )
-        try:
-            store.ensure_index()
-        except Exception:
-            store.close()
-            raise
+        read_only_demo = os.getenv(
+            "PUBLIC_DEMO_READ_ONLY", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+        if not read_only_demo:
+            try:
+                store.ensure_index()
+            except Exception:
+                store.close()
+                raise
 
         return store
 

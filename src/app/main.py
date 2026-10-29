@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import inspect
+import logging
+import os
 import threading
 import time
-import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.app.azure_embeddings import AzureOpenAIEmbedder
@@ -131,6 +133,52 @@ def enforce_rate_limit(request: Request) -> None:
         buckets[client_ip] = (started_at, count + 1)
 
 
+def _public_demo_read_only_enabled() -> bool:
+    """Return whether document mutations are disabled for a public demo."""
+    return os.getenv("PUBLIC_DEMO_READ_ONLY", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def _deny_public_demo_mutations() -> None:
+    """Reject document changes when running in public read-only mode."""
+    if _public_demo_read_only_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="Document changes are disabled in the public read-only demo.",
+        )
+
+
+def enforce_public_demo_chat_budget(request: Request) -> None:
+    """Apply a process-local daily request cap in public-demo mode."""
+    if not _public_demo_read_only_enabled():
+        return
+
+    try:
+        limit = max(
+            1, int(os.getenv("PUBLIC_DEMO_MAX_CHAT_REQUESTS_PER_DAY", "30"))
+        )
+    except ValueError:
+        limit = 30
+
+    current_day = int(time.time() // 86400)
+    lock: threading.Lock = request.app.state.rate_limit_lock
+    budget: dict[str, int] = request.app.state.public_demo_chat_budget
+
+    with lock:
+        if budget["day"] != current_day:
+            budget["day"] = current_day
+            budget["count"] = 0
+
+        if budget["count"] >= limit:
+            raise HTTPException(
+                status_code=429,
+                detail="The public demo daily chat limit has been reached.",
+            )
+
+        budget["count"] += 1
+
+
 def _safe_filename(upload_name: str | None) -> str:
     """Keep only a basename and reject empty or control-character filenames."""
     name = Path((upload_name or "").replace("\\", "/")).name.strip()
@@ -219,6 +267,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.rate_limit_lock = threading.Lock()
     application.state.rate_limit_max_requests = DEFAULT_RATE_LIMIT
     application.state.rate_limit_window_seconds = RATE_LIMIT_WINDOW_SECONDS
+    application.state.public_demo_chat_budget = {
+        "day": int(time.time() // 86400), "count": 0
+    }
 
     application.add_middleware(
         CORSMiddleware,
@@ -283,7 +334,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Report that the HTTP application is running."""
         return {"status": "ok"}
 
-    @application.post("/ingest", tags=["documents"])
+    @application.post(
+    "/ingest",
+    tags=["documents"],
+    dependencies=[Depends(_deny_public_demo_mutations)],
+)
     async def ingest(
         file: Annotated[UploadFile, File(description="A PDF or TXT document")],
         settings: Annotated[Settings, Depends(get_app_settings)],
@@ -355,6 +410,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "/chat",
         response_model=ChatResponse,
         tags=["chat"],
+        dependencies=[Depends(enforce_public_demo_chat_budget)],
     )
     async def chat(
         payload: ChatRequest,
@@ -391,7 +447,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="The document list could not be retrieved.",
             ) from None
 
-    @application.delete("/documents/{source}", tags=["documents"])
+    @application.delete(
+    "/documents/{source}",
+    tags=["documents"],
+    dependencies=[Depends(_deny_public_demo_mutations)],
+)
     async def delete_document(
         source: str,
         services: Annotated[ApplicationServices, Depends(get_services)],
@@ -426,3 +486,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+# Serve the compiled React frontend when its build assets are available.
+# Keep this catch-all mount after the API route definitions.
+FRONTEND_DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+if FRONTEND_DIST_DIR.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True),
+        name="frontend",
+    )
