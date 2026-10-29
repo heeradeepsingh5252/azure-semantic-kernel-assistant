@@ -234,11 +234,13 @@ class SemanticKernelAssistant:
         )
         from openai import AsyncOpenAI
 
-        credential = DefaultAzureCredential()
+        credential = DefaultAzureCredential(process_timeout=60)
+
         token_provider = get_bearer_token_provider(
-            credential,
-            "https://ai.azure.com/.default",
-        )
+        credential,
+        "https://ai.azure.com/.default",
+)
+
 
         # Preserve the already-tested OpenAI-compatible Azure endpoint.
         base_url = endpoint.rstrip("/")

@@ -54,7 +54,7 @@ class AzureOpenAIEmbedder(Embedder):
                 "AZURE_OPENAI_EMBEDDING_DEPLOYMENT must be configured."
             )
 
-        credential = DefaultAzureCredential()
+        credential = DefaultAzureCredential(process_timeout=60)
         token_provider = get_bearer_token_provider(
             credential,
             EMBEDDING_TOKEN_SCOPE,

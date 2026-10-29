@@ -1,3 +1,4 @@
+
 """Environment-based configuration for the assistant."""
 
 import os
@@ -35,6 +36,7 @@ class Settings:
     max_upload_mb: int
 
 
+# All supported Azure settings, including optional settings.
 AZURE_SETTING_NAMES = (
     "AZURE_OPENAI_ENDPOINT",
     "AZURE_OPENAI_API_KEY",
@@ -46,11 +48,23 @@ AZURE_SETTING_NAMES = (
     "AZURE_SEARCH_INDEX_NAME",
 )
 
+# Required settings for the current Azure service implementation.
+# Entra ID authentication does not require an OpenAI API key.
+# The OpenAI v1 endpoint does not require a dated API version.
+AZURE_REQUIRED_SETTING_NAMES = (
+    "AZURE_OPENAI_ENDPOINT",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT",
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+    "AZURE_SEARCH_ENDPOINT",
+    "AZURE_SEARCH_API_KEY",
+    "AZURE_SEARCH_INDEX_NAME",
+)
+
 
 def get_settings(
     environ: Mapping[str, str] | None = None,
 ) -> Settings:
-    """Validate and return settings; local mode needs no Azure credentials."""
+    """Validate and return application settings."""
     values = os.environ if environ is None else environ
 
     app_mode = values.get("APP_MODE", "local").strip().lower()
@@ -68,10 +82,15 @@ def get_settings(
         for name in AZURE_SETTING_NAMES
     }
 
-    missing = [
-        name for name, value in azure_values.items()
-        if value is None
-    ] if app_mode == "azure" else []
+    missing = (
+        [
+            name
+            for name in AZURE_REQUIRED_SETTING_NAMES
+            if azure_values[name] is None
+        ]
+        if app_mode == "azure"
+        else []
+    )
 
     if pii_engine == "azure_language":
         for name in ("AZURE_LANGUAGE_ENDPOINT", "AZURE_LANGUAGE_API_KEY"):
